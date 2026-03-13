@@ -1,1283 +1,953 @@
-# Windows Server Basic Auditing: Complete Implementation Guide
+# Windows Server Auditing & Security Monitoring Guide
 
-> **Master Windows Server Security Auditing: From Fundamentals to Enterprise Implementation**  
-> A practical guide to configuring, managing, and analyzing security audit policies in Windows Server environments
-
----
-
-## 📋 Table of Contents
-
-1. [Introduction to Windows Server Auditing](#introduction)
-2. [Understanding Basic vs. Advanced Auditing](#basic-vs-advanced)
-3. [The 9 Basic Auditing Categories Explained](#basic-categories)
-4. [Implementation Scenarios](#implementation-scenarios)
-5. [File and Folder Auditing](#file-folder-auditing)
-6. [Security Log Analysis](#security-log-analysis)
-7. [Real-World Use Cases](#real-world-use-cases)
-8. [Best Practices & Optimization](#best-practices)
-9. [Troubleshooting Guide](#troubleshooting)
-10. [Quick Reference](#quick-reference)
+> **Comprehensive guide to implementing security auditing, diagnostics, and monitoring in Windows Server environments**
 
 ---
 
-## Introduction
+## Table of Contents
+
+- [Overview](#overview)
+- [Understanding Auditing Categories](#understanding-auditing-categories)
+  - [Basic Auditing](#basic-auditing)
+  - [Advanced Auditing](#advanced-auditing)
+- [Detailed Category Explanations](#detailed-category-explanations)
+- [Implementation Scenarios](#implementation-scenarios)
+- [Configuration Guides](#configuration-guides)
+- [Best Practices](#best-practices)
+- [Troubleshooting](#troubleshooting)
+
+---
+
+## Overview
 
 ### What is Windows Server Auditing?
 
-Windows Server auditing is a security feature that records system activities and events to the **Security Log**, enabling administrators to:
+**Windows Server Auditing** is a security mechanism that records events and activities in the Windows Security Log. Think of it as a security camera system for your server—it watches, records, and alerts you to important security-related activities.
 
-- 🔍 **Detect Security Threats**: Identify unauthorized access attempts and malicious activity
-- 📊 **Ensure Compliance**: Meet regulatory requirements (SOX, HIPAA, PCI-DSS, GDPR)
-- 🔎 **Forensic Investigation**: Trace the sequence of events during security incidents
-- 📈 **Operational Monitoring**: Track system changes and administrative actions
-- ⚖️ **Accountability**: Document who performed specific actions and when
-
-### How Auditing Works
+### Why Auditing Matters
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Auditing Workflow                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  User/Process Action                                            │
-│        │                                                         │
-│        ▼                                                         │
-│  ┌─────────────┐     ┌─────────────┐     ┌─────────────────┐   │
-│  │   System    │────▶│   Audit     │────▶│   Security      │   │
-│  │   Event     │     │   Policy    │     │   Event Log     │   │
-│  │   Occurs    │     │   Check     │     │   (.evtx)       │   │
-│  └─────────────┘     └─────────────┘     └─────────────────┘   │
-│                              │                         │        │
-│                              ▼                         ▼        │
-│                    ┌─────────────────┐      ┌──────────────┐   │
-│                    │  Policy Match?  │      │  Event       │   │
-│                    │  (Success/      │      │  Viewer /    │   │
-│                    │   Failure)      │      │  SIEM /      │   │
-│                    └─────────────────┘      │  Azure       │   │
-│                                             │  Monitor     │   │
-│                                             └──────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  SECURITY LAYERS IN WINDOWS SERVER                          │
+├─────────────────────────────────────────────────────────────┤
+│  1. Prevention  → Firewalls, ACLs, Authentication           │
+│  2. Detection   → AUDITING (what we focus on here)          │
+│  3. Response    → Incident response, forensics              │
+│  4. Recovery    → Backups, disaster recovery                │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Key Concepts
+### Key Benefits
 
-| Concept | Description | Example |
-|---------|-------------|---------|
-| **Audit Policy** | Configuration that defines what to audit | Audit failed logon attempts |
-| **SACL** | System Access Control List - specifies auditing for objects | Audit "Domain Users" failed access to \Finance\ |
-| **Security Log** | Protected event log storing audit events | Event ID 4625: Failed logon |
-| **Success Auditing** | Logs when an action completes successfully | User successfully logs on |
-| **Failure Auditing** | Logs when an action fails (often more critical) | Failed password attempt |
+| Benefit | Description | Business Impact |
+|---------|-------------|-----------------|
+| **Accountability** | Track who did what and when | Compliance requirements (SOX, HIPAA, GDPR) |
+| **Threat Detection** | Identify malicious attempts | Early breach detection |
+| **Forensics** | Historical data for investigations | Legal evidence, root cause analysis |
+| **Compliance** | Prove security controls exist | Pass audits, avoid penalties |
+| **Operational Insight** | Understand resource usage | Optimize permissions, identify misuse |
 
 ---
 
-## Basic vs. Advanced Auditing
+## Understanding Auditing Categories
 
-### Comparison Overview
+Windows Server provides **two levels** of auditing granularity:
+
+### Comparison: Basic vs. Advanced Auditing
 
 | Feature | Basic Auditing | Advanced Auditing |
-|---------|----------------|-------------------|
-| **Categories** | 9 broad categories | 10 categories with 60+ subcategories |
-| **Granularity** | High-level (e.g., all logons) | Fine-grained (e.g., only NPS logons) |
-| **Configuration** | Local Security Policy or GPO | GPO or AuditPol.exe |
-| **Best For** | Small environments, quick setup | Enterprise, compliance requirements |
-| **Log Volume** | Can be excessive (broad net) | Optimized (precise targeting) |
-
-> ⚠️ **CRITICAL WARNING**: Do not use Basic and Advanced auditing simultaneously. When Advanced auditing is applied via Group Policy, Windows **clears all Basic audit settings**. Choose one approach and stick with it.
-
-### Decision Matrix: Which to Choose?
-
-```
-Environment Size          Complexity          Recommendation
-─────────────────────────────────────────────────────────────
-< 10 servers              Low                 Basic Auditing
-10-50 servers             Medium              Advanced Auditing
-> 50 servers              High                Advanced Auditing
-Domain Controllers        Critical            Advanced Auditing
-File Servers              High                Advanced Auditing (File System)
-Compliance Required       Any                 Advanced Auditing
-```
+|---------|---------------|-------------------|
+| **Categories** | 9 broad categories | 10 categories with 60+ sub-settings |
+| **Granularity** | Broad (Success/Failure) | Highly specific (per-operation) |
+| **Use Case** | Small-medium environments | Enterprise, high-security environments |
+| **Log Volume** | Moderate | Potentially very high |
+| **Configuration** | Simple | Requires planning |
 
 ---
 
-## The 9 Basic Auditing Categories Explained
+## Basic Auditing Categories (Deep Dive)
 
-### 1. Audit Account Logon Events 🔐
+### 1. Audit Account Logon Events
 
-**What it Tracks:**
-Authentication attempts against Active Directory accounts (domain authentication).
-
-**When Events Are Generated:**
-- User logs on to any computer in the domain
-- Service account authenticates to domain resources
-- Computer account authenticates to the domain
-
-**Key Event IDs:**
-| Event ID | Description | Priority |
-|----------|-------------|----------|
-| 4624 | Successful account logon | Medium |
-| 4625 | Failed account logon | **Critical** |
-| 4648 | Explicit credential logon (RunAs) | High |
-| 4771 | Kerberos pre-authentication failed | **Critical** |
-| 4776 | NTLM authentication attempt | Medium |
-
-**Detailed Scenario: Detecting Brute Force Attacks**
+**What it tracks:** Authentication attempts against Active Directory accounts
 
 ```
-Attack Scenario:
-────────────────
-Attacker attempts to guess passwords for multiple domain accounts
-using automated tools from a compromised workstation.
+SCENARIO: Domain User Login
+─────────────────────────────────────────────────────────
+User Action:     Alice logs into her workstation (WS-01)
+Event Generated: Account Logon Event on DOMAIN CONTROLLER
+Location:        Security Log on DC (NOT the workstation)
+Event ID:        4768 (Kerberos TGT requested)
+                 4769 (Kerberos service ticket requested)
+                 4776 (NTLM authentication)
 
-Detection Strategy:
-───────────────────
-1. Enable "Audit account logon events" - Failure
-2. Monitor for Event ID 4625 (Failed logon)
-3. Correlate by Source IP and Time Window
-4. Alert on >5 failed attempts per account in 10 minutes
+WHY THIS MATTERS:
+- Tracks authentication at the domain level
+- Helps detect: Password attacks, lateral movement
+- Critical for: Identifying compromised credentials
 ```
 
-**Implementation:**
+**Real-World Use Case: Detecting Brute Force Attacks**
 
 ```powershell
-# Method 1: Local Security Policy (Single Server)
-# Run as Administrator
-secedit /export /cfg C:\security_config.inf
-# Edit cfg file: AuditAccountLogon = 2 (Failure only)
-# Or use GUI: Local Security Policy -> Audit Policy
-
-# Method 2: Group Policy (Recommended for Domains)
-# GPMC.msc -> Computer Configuration -> Policies -> 
-# Windows Settings -> Security Settings -> Local Policies -> 
-# Audit Policy -> Audit account logon events
-
-# Method 3: Command Line (AuditPol - works for both)
-auditpol /set /subcategory:"Account Logon" /failure:enable /success:disable
-
-# Verification
-auditpol /get /category:"Account Logon"
+# PowerShell: Detect multiple failed logon attempts
+Get-WinEvent -FilterHashtable @{
+    LogName = 'Security'
+    ID = 4771, 4768  # Failed Kerberos pre-authentication
+    StartTime = (Get-Date).AddHours(-24)
+} | Where-Object { $_.Properties[0].Value -eq '0x18' } |  # Bad password
+Group-Object -Property { $_.Properties[2].Value } |       # Group by username
+Where-Object { $_.Count -gt 5 } |                         # More than 5 failures
+Select-Object Name, Count
 ```
 
-**PowerShell Analysis Script:**
-```powershell
-# Detect potential brute force attacks
-function Get-BruteForceAttempts {
-    param(
-        [int]$Threshold = 5,
-        [int]$TimeWindowMinutes = 10
-    )
-
-    $startTime = (Get-Date).AddMinutes(-$TimeWindowMinutes)
-
-    Get-WinEvent -FilterHashtable @{
-        LogName = 'Security'
-        ID = 4625
-        StartTime = $startTime
-    } | Group-Object { 
-        $_.Properties[5].Value  # TargetUserName
-    } | Where-Object { $_.Count -ge $Threshold } | 
-    ForEach-Object {
-        [PSCustomObject]@{
-            TargetUser = $_.Name
-            FailedAttempts = $_.Count
-            SourceIPs = $_.Group | ForEach-Object { $_.Properties[19].Value } | 
-                         Select-Object -Unique
-            TimeWindow = "$TimeWindowMinutes minutes"
-            RiskLevel = if ($_.Count -gt 10) { "CRITICAL" } else { "HIGH" }
-        }
-    }
-}
-
-# Usage
-Get-BruteForceAttempts -Threshold 5 -TimeWindowMinutes 10 | 
-    Format-Table -AutoSize
-```
+**Configuration Recommendation:**
+- **Enable Failure auditing** on all domain controllers
+- **Enable Success auditing** only if you need login reports
+- **Volume Impact:** High in large environments (every user login)
 
 ---
 
-### 2. Audit Logon Events 🖥️
+### 2. Audit Logon Events
 
-**What it Tracks:**
-Logon events to the specific computer (local logons, network logons, RDP).
-
-**The Critical Difference:**
-- **Account Logon**: Authentication to domain (occurs on DC)
-- **Logon Events**: Session establishment on target computer
-
-**Logon Types Reference:**
-| Type | Description | Use Case |
-|------|-------------|----------|
-| 2 | Interactive (Console) | Local login at keyboard |
-| 3 | Network | SMB shares, RPC, IIS |
-| 4 | Batch | Scheduled tasks |
-| 5 | Service | Windows services starting |
-| 7 | Unlock | Workstation unlock |
-| 8 | NetworkCleartext | IIS Basic Auth |
-| 9 | NewCredentials | RunAs with /netonly |
-| 10 | RemoteInteractive | RDP connections |
-| 11 | CachedInteractive | Offline logon with cached credentials |
-
-**Detailed Scenario: Monitoring Privileged Access**
+**What it tracks:** Interactive and network logons to a specific computer
 
 ```
-Scenario: Contoso Financial Services
-─────────────────────────────────────
-Requirement: Track all administrative access to SQL Servers
-containing customer financial data for SOX compliance.
+SCENARIO: Different Logon Types
+─────────────────────────────────────────────────────────
+Type 2  (Interactive):    User logs on at keyboard (console)
+Type 3  (Network):        User accesses shared folder
+Type 4  (Batch):          Scheduled task runs
+Type 5  (Service):        Service starts with user account
+Type 7  (Unlock):         Workstation unlocked
+Type 10 (RemoteDesktop):  RDP connection established
 
-Implementation:
-1. Enable "Audit logon events" - Success and Failure
-2. Filter for Logon Type 10 (RDP) and Type 3 (Network)
-3. Correlate with privileged group membership
-4. Forward to SIEM for retention and alerting
+EVENT IDs:
+4624 - Successful logon
+4625 - Failed logon
+4634 - Logoff
+4647 - User-initiated logoff
+4648 - Explicit credential logon (RunAs)
 ```
 
-**Implementation:**
+**Real-World Use Case: Detecting Unauthorized RDP Access**
 
-```powershell
-# Enable via Group Policy
-# Computer Configuration -> Policies -> Windows Settings ->
-# Security Settings -> Local Policies -> Audit Policy ->
-# Audit logon events: Success, Failure
-
-# Query recent administrative logons
-function Get-AdminLogons {
-    param(
-        [string[]]$AdminGroups = @("Domain Admins", "Enterprise Admins", "Schema Admins"),
-        [int]$HoursBack = 24
-    )
-
-    $startTime = (Get-Date).AddHours(-$HoursBack)
-
-    # Get events
-    $events = Get-WinEvent -FilterHashtable @{
-        LogName = 'Security'
-        ID = 4624
-        StartTime = $startTime
-    }
-
-    # Process and enrich
-    $events | ForEach-Object {
-        $xml = [xml]$_.ToXml()
-        $logonType = [int]$xml.Event.EventData.Data | 
-                     Where-Object {$_.Name -eq 'LogonType'} | 
-                     Select-Object -ExpandProperty '#text'
-        $username = $xml.Event.EventData.Data | 
-                    Where-Object {$_.Name -eq 'TargetUserName'} | 
-                    Select-Object -ExpandProperty '#text'
-        $domain = $xml.Event.EventData.Data | 
-                  Where-Object {$_.Name -eq 'TargetDomainName'} | 
-                  Select-Object -ExpandProperty '#text'
-
-        # Check if user is in admin groups (simplified - requires AD module)
-        [PSCustomObject]@{
-            Time = $_.TimeCreated
-            User = "$domain\$username"
-            LogonType = $logonType
-            LogonTypeName = switch ($logonType) {
-                2 { "Interactive" }
-                3 { "Network" }
-                10 { "RemoteDesktop" }
-                default { "Other($logonType)" }
-            }
-            Workstation = $xml.Event.EventData.Data | 
-                          Where-Object {$_.Name -eq 'WorkstationName'} | 
-                          Select-Object -ExpandProperty '#text'
-            SourceIP = $xml.Event.EventData.Data | 
-                       Where-Object {$_.Name -eq 'IpAddress'} | 
-                       Select-Object -ExpandProperty '#text'
-        }
-    } | Where-Object { $_.LogonType -in @(2, 3, 10) }
-}
-
-Get-AdminLogons -HoursBack 24 | Format-Table -AutoSize
 ```
+ALERT SCENARIO: After-Hours RDP Connection
+─────────────────────────────────────────────────────────
+Time:     2:47 AM (outside business hours)
+User:     john.doe (marketing employee)
+Source:   IP 185.220.101.x (foreign IP range)
+Action:   Successful RDP logon (Type 10)
+
+INVESTIGATION STEPS:
+1. Check if john.doe is on vacation/traveling
+2. Verify if IP is from VPN pool
+3. Check for concurrent sessions (compromised credentials?)
+4. Review recent password changes
+5. Check for other accounts accessed from same IP
+```
+
+**Configuration Recommendation:**
+- **Workstations:** Audit Failure (detect local admin abuse)
+- **Servers:** Audit Success and Failure (track access)
+- **Domain Controllers:** Audit Success and Failure
 
 ---
 
-### 3. Audit Account Management 👥
+### 3. Audit Account Management
 
-**What it Tracks:**
-Changes to user accounts, group accounts, and computer accounts.
-
-**Critical Event IDs:**
-| Event ID | Description | Security Impact |
-|----------|-------------|-----------------|
-| 4720 | User account created | **Critical** - New account could be backdoor |
-| 4722 | User account enabled | **Critical** - Re-enabling disabled account |
-| 4723 | Password change attempt | Medium - User or admin changing password |
-| 4724 | Password reset attempt | **Critical** - Admin resetting password |
-| 4725 | User account disabled | Medium - Account deactivation |
-| 4726 | User account deleted | **Critical** - Covering tracks |
-| 4738 | User account changed | High - Privilege escalation |
-| 4740 | Account locked out | Medium - Possible brute force |
-| 4728 | Member added to global group | **Critical** - Privilege escalation |
-| 4732 | Member added to local group | **Critical** - Local admin addition |
-
-**Detailed Scenario: Detecting Privilege Escalation**
+**What it tracks:** Changes to user, group, and computer accounts
 
 ```
-Attack Pattern: The "Shadow Admin"
-────────────────────────────────────
-Attacker compromises helpdesk account, adds their account to 
-"Domain Admins" group during off-hours, then removes audit logs.
-
-Detection Strategy:
-───────────────────
-1. Enable "Audit account management" - Success
-2. Monitor Event ID 4728 (Global group member added)
-3. Alert on changes to privileged groups
-4. Forward logs immediately to SIEM (immutable storage)
-5. Monitor for Event ID 1102 (Audit log cleared) - CRITICAL
+CRITICAL EVENTS TO MONITOR:
+─────────────────────────────────────────────────────────
+4720 - User account created
+4722 - User account enabled
+4723 - Password change attempted
+4724 - Password reset attempted
+4725 - User account disabled
+4726 - User account deleted
+4732 - Member added to security-enabled local group
+4735 - Security-enabled local group modified
+4737 - Security-enabled global group modified
+4756 - Member added to security-enabled universal group
 ```
 
-**Implementation:**
+**Real-World Use Case: Privilege Escalation Detection**
 
-```powershell
-# Enable auditing
-auditpol /set /subcategory:"Account Management" /success:enable /failure:enable
-
-# Real-time monitoring for privilege escalation
-function Watch-PrivilegedGroupChanges {
-    param(
-        [string[]]$ProtectedGroups = @(
-            "Domain Admins",
-            "Enterprise Admins", 
-            "Schema Admins",
-            "Administrators",
-            "Account Operators",
-            "Backup Operators"
-        )
-    )
-
-    Write-Host "Monitoring for changes to privileged groups..." -ForegroundColor Green
-    Write-Host "Protected groups: $($ProtectedGroups -join ', ')" -ForegroundColor Yellow
-
-    # Query existing events
-    $events = Get-WinEvent -FilterHashtable @{
-        LogName = 'Security'
-        ID = 4728, 4732, 4756  # Member added to groups
-        StartTime = (Get-Date).AddHours(-1)
-    } -ErrorAction SilentlyContinue
-
-    foreach ($event in $events) {
-        $xml = [xml]$event.ToXml()
-        $targetGroup = ($xml.Event.EventData.Data | 
-                       Where-Object {$_.Name -eq 'TargetUserName'}).
-                       '#text'
-
-        if ($ProtectedGroups -contains $targetGroup) {
-            $subject = ($xml.Event.EventData.Data | 
-                       Where-Object {$_.Name -eq 'SubjectUserName'}).
-                       '#text'
-            $member = ($xml.Event.EventData.Data | 
-                      Where-Object {$_.Name -eq 'MemberName'}).
-                      '#text'
-
-            Write-Warning @"
-PRIVILEGED GROUP MODIFICATION DETECTED!
-Time: $($event.TimeCreated)
-Group: $targetGroup
-Added By: $subject
-Member Added: $member
-"@
-
-            # Send alert (example: email or webhook)
-            # Send-MailMessage or Invoke-RestMethod here
-        }
-    }
-}
-
-# Run monitoring
-Watch-PrivilegedGroupChanges
 ```
+ATTACK SCENARIO: Malicious Insider
+─────────────────────────────────────────────────────────
+Timeline:
+09:00 AM - User 'helpdesk_tech' logs in (normal)
+09:15 AM - User added to 'Domain Admins' group (ALERT!)
+09:20 AM - User accesses CEO's mailbox
+09:45 AM - User removed from 'Domain Admins' (covering tracks)
+
+DETECTION:
+Event ID 4732: Member added to Domain Admins
+Subject: helpdesk_tech
+Target:  Domain Admins
+
+RESPONSE:
+1. Immediate account disable
+2. Check what resources were accessed
+3. Review all actions by this user in last 30 days
+4. Check for other privilege escalations
+```
+
+**Configuration Recommendation:**
+- **Always enable Success and Failure**
+- **Critical for:** All domain controllers
+- **Volume Impact:** Low to moderate (depends on account activity)
 
 ---
 
-### 4. Audit Directory Service Access 📁
+### 4. Audit Directory Service Access
 
-**What it Tracks:**
-Access to Active Directory objects (users, groups, OUs, GPOs) based on SACLs.
-
-**Key Characteristics:**
-- Requires both policy enablement AND SACL configuration on objects
-- Events generated on Domain Controllers
-- Critical for tracking AD reconnaissance
-
-**Detailed Scenario: Protecting Sensitive AD Objects**
+**What it tracks:** Access to Active Directory objects (when SACLs are configured)
 
 ```
-Scenario: High-Value Target Protection
-──────────────────────────────────────
-Contoso has a "C-Level Executives" OU containing CEO, CFO accounts.
-Security team needs to detect any access to these accounts.
+HOW IT WORKS:
+─────────────────────────────────────────────────────────
+1. Enable "Audit Directory Service Access" policy
+2. Configure SACL on specific AD objects
+3. Windows logs access attempts to those objects
 
-Implementation Steps:
-1. Enable "Audit directory service access" - Success and Failure
-2. Configure SACL on "C-Level Executives" OU
-3. Audit all authenticated users for "Read All Properties"
-4. Monitor Event ID 4662 (Operation performed on object)
-5. Alert on unusual access patterns (non-IT users accessing)
+EXAMPLE SACL CONFIGURATION:
+Object:     OU=Finance,DC=company,DC=com
+Principal:  Everyone
+Access:     Write all properties
+Audit:      Failure
+
+RESULT: Logs any failed attempt to modify Finance OU
 ```
 
-**Implementation:**
+**Real-World Use Case: Protecting Sensitive OUs**
 
-```powershell
-# Step 1: Enable policy
-auditpol /set /subcategory:"DS Access" /success:enable /failure:enable
-
-# Step 2: Configure SACL on specific OU via PowerShell
-Import-Module ActiveDirectory
-
-$ouPath = "OU=C-Level Executives,DC=contoso,DC=com"
-$ou = Get-ADObject -Identity $ouPath -Properties nTSecurityDescriptor
-
-# Create audit rule
-$auditRule = New-Object System.DirectoryServices.ActiveDirectoryAuditRule(
-    [System.Security.Principal.SecurityIdentifier]::new("S-1-1-0"),  # Everyone
-    [System.DirectoryServices.ActiveDirectoryRights]::ReadProperty,
-    [System.Security.AccessControl.AuditFlags]::Success,
-    [System.DirectoryServices.ActiveDirectorySecurityInheritance]::All
-)
-
-# Apply SACL
-$ou.nTSecurityDescriptor.AddAuditRule($auditRule)
-Set-ADObject -Identity $ouPath -Replace @{
-    nTSecurityDescriptor = $ou.nTSecurityDescriptor
-}
-
-# Step 3: Monitor for access
-function Get-ADObjectAccess {
-    param(
-        [string]$TargetOU = "C-Level Executives",
-        [int]$HoursBack = 24
-    )
-
-    Get-WinEvent -FilterHashtable @{
-        LogName = 'Security'
-        ID = 4662
-        StartTime = (Get-Date).AddHours(-$HoursBack)
-    } | ForEach-Object {
-        $xml = [xml]$_.ToXml()
-        $objectName = ($xml.Event.EventData.Data | 
-                      Where-Object {$_.Name -eq 'ObjectName'}).
-                      '#text'
-
-        if ($objectName -like "*$TargetOU*") {
-            [PSCustomObject]@{
-                Time = $_.TimeCreated
-                Subject = ($xml.Event.EventData.Data | 
-                          Where-Object {$_.Name -eq 'SubjectUserName'}).
-                          '#text'
-                Object = $objectName
-                Operation = ($xml.Event.EventData.Data | 
-                            Where-Object {$_.Name -eq 'OperationType'}).
-                            '#text'
-                Properties = ($xml.Event.EventData.Data | 
-                             Where-Object {$_.Name -eq 'Properties'}).
-                             '#text'
-            }
-        }
-    }
-}
-
-Get-ADObjectAccess -HoursBack 24 | Format-Table -AutoSize
 ```
+SCENARIO: Protecting Admin Accounts OU
+─────────────────────────────────────────────────────────
+Target:     OU=Tier0-Admins,DC=company,DC=com
+SACL:       Everyone - Write - Failure
+
+ATTACK ATTEMPT:
+Attacker compromises helpdesk account
+Attempts to add user to OU=Tier0-Admins
+Action fails (insufficient permissions)
+Event logged: Event ID 4662 (Failed DS access)
+
+VALUE: Early warning of privilege escalation attempts
+```
+
+**Configuration Recommendation:**
+- **Enable Success and Failure**
+- **Configure SACLs** on sensitive OUs only (too verbose otherwise)
+- **Volume Impact:** High if SACLs are broad
 
 ---
 
-### 5. Audit Policy Change ⚙️
+### 5. Audit Policy Change
 
-**What it Tracks:**
-Changes to audit policies, user rights assignments, and trust relationships.
-
-**Why It Matters:**
-Attackers often disable auditing to cover their tracks. This category detects that.
-
-**Critical Event IDs:**
-| Event ID | Description | Impact |
-|----------|-------------|--------|
-| 4719 | System audit policy changed | **Critical** - Auditing disabled/modified |
-| 4739 | Domain policy changed | **Critical** - Domain-wide changes |
-| 608 | User right assigned | High - Privilege escalation |
-| 609 | User right removed | Medium - Potential Denial of Service |
-
-**Detailed Scenario: Detecting Audit Tampering**
+**What it tracks:** Changes to security policies
 
 ```
-Attack Pattern: Covering Tracks
-───────────────────────────────
-Attacker gains admin rights, disables auditing to perform 
-malicious actions without logging, then re-enables auditing.
-
-Detection Strategy:
-───────────────────
-1. Enable "Audit policy change" - Success
-2. Monitor Event ID 4719 (System audit policy changed)
-3. Alert on ANY audit policy change
-4. Correlate with change management tickets
-5. If no ticket exists, escalate to Security Team
+EVENTS MONITORED:
+─────────────────────────────────────────────────────────
+4715 - Object access audit policy changed (SACL)
+4719 - System audit policy changed
+4739 - Domain policy changed
+4902 - Per-user audit policy table created
+4904 - Attempt to register security event source
+4905 - Attempt to unregister security event source
+4906 - CrashOnAuditFail value changed
+4907 - Auditing settings on object changed
+4912 - Per-user audit policy changed
 ```
 
-**Implementation:**
+**Real-World Use Case: Detecting Audit Policy Tampering**
 
-```powershell
-# Enable via command line
-auditpol /set /subcategory:"Policy Change" /success:enable /failure:enable
-
-# Monitor for audit policy changes
-function Watch-AuditPolicyChanges {
-    $events = Get-WinEvent -FilterHashtable @{
-        LogName = 'Security'
-        ID = 4719
-        StartTime = (Get-Date).AddHours(-1)
-    } -ErrorAction SilentlyContinue
-
-    foreach ($event in $events) {
-        $xml = [xml]$event.ToXml()
-        $subject = ($xml.Event.EventData.Data | 
-                   Where-Object {$_.Name -eq 'SubjectUserName'}).
-                   '#text'
-        $category = ($xml.Event.EventData.Data | 
-                    Where-Object {$_.Name -eq 'CategoryId'}).
-                    '#text'
-        $subcategory = ($xml.Event.EventData.Data | 
-                       Where-Object {$_.Name -eq 'SubcategoryId'}).
-                       '#text'
-
-        Write-Warning @"
-ALERT: Audit Policy Modified!
-Time: $($event.TimeCreated)
-Changed By: $subject
-Category ID: $category
-Subcategory ID: $subcategory
-This could indicate an attempt to disable logging!
-"@
-
-        # Immediate notification
-        # Consider: disabling the account, requiring MFA re-auth, etc.
-    }
-}
-
-# Set up continuous monitoring (run as scheduled task)
-Watch-AuditPolicyChanges
 ```
+ATTACK SCENARIO: Covering Tracks
+─────────────────────────────────────────────────────────
+Attacker gains admin access
+Disables auditing to hide activities
+
+DETECTION:
+Event ID 4719: System audit policy changed
+Subject: compromised_admin
+Changes: "Audit Logon Events" changed from Success/Failure to No Auditing
+
+IMMEDIATE ALERT: Any audit policy change should trigger investigation
+```
+
+**Configuration Recommendation:**
+- **Always enable Success and Failure**
+- **Critical for:** All systems
+- **Volume Impact:** Low (policy changes are infrequent)
 
 ---
 
-### 6. Audit Privilege Use 🛡️
+### 6. Audit Privilege Use
 
-**What it Tracks:**
-Usage of specific user rights (privileges) such as:
-- SeDebugPrivilege (debug programs)
-- SeBackupPrivilege (backup files)
-- SeRestorePrivilege (restore files)
-- SeTakeOwnershipPrivilege (take ownership)
-
-**Detailed Scenario: Detecting Credential Dumping**
+**What it tracks:** Use of sensitive privileges (user rights)
 
 ```
-Attack Pattern: LSASS Memory Dump
-─────────────────────────────────
-Attacker uses Mimikatz or similar tool to dump credentials
-from LSASS process memory, requiring SeDebugPrivilege.
-
-Detection Strategy:
-───────────────────
-1. Enable "Audit privilege use" for sensitive privileges
-2. Monitor for SeDebugPrivilege use by non-system accounts
-3. Alert on usage by non-IT users
-4. Correlate with process creation events
+KEY PRIVILEGES TO MONITOR:
+─────────────────────────────────────────────────────────
+SeBackupPrivilege          - Bypass file security for backup
+SeDebugPrivilege           - Debug programs (access any process)
+SeRestorePrivilege         - Bypass file security for restore
+SeTakeOwnershipPrivilege   - Take ownership of objects
+SeTcbPrivilege             - Act as part of OS (highest risk)
+SeSecurityPrivilege        - Manage auditing and security log
+SeLoadDriverPrivilege      - Load/unload device drivers
 ```
 
-**Implementation:**
+**Real-World Use Case: Detecting Credential Dumping**
 
-```powershell
-# Enable (Warning: High volume in busy environments)
-auditpol /set /subcategory:"Privilege Use" /success:enable /failure:enable
-
-# Focus on specific high-risk privileges
-# Note: Requires Advanced Auditing for granularity
-# With Basic Auditing, this generates many events
-
-# Analysis script for privilege usage
-function Get-SuspiciousPrivilegeUse {
-    param(
-        [string[]]$SensitivePrivileges = @(
-            "SeDebugPrivilege",
-            "SeBackupPrivilege", 
-            "SeRestorePrivilege",
-            "SeTakeOwnershipPrivilege",
-            "SeLoadDriverPrivilege"
-        ),
-        [int]$HoursBack = 1
-    )
-
-    Get-WinEvent -FilterHashtable @{
-        LogName = 'Security'
-        ID = 4672  # Special privileges assigned
-        StartTime = (Get-Date).AddHours(-$HoursBack)
-    } | ForEach-Object {
-        $xml = [xml]$_.ToXml()
-        $privileges = ($xml.Event.EventData.Data | 
-                      Where-Object {$_.Name -eq 'PrivilegeList'}).
-                      '#text'
-        $username = ($xml.Event.EventData.Data | 
-                    Where-Object {$_.Name -eq 'SubjectUserName'}).
-                    '#text'
-
-        # Check if any sensitive privilege was used
-        $usedSensitive = $SensitivePrivileges | Where-Object { 
-            $privileges -contains $_ 
-        }
-
-        if ($usedSensitive -and $username -notin @("SYSTEM", "NETWORK SERVICE")) {
-            [PSCustomObject]@{
-                Time = $_.TimeCreated
-                User = $username
-                PrivilegesUsed = $usedSensitive -join ', '
-                AllPrivileges = $privileges
-            }
-        }
-    }
-}
-
-Get-SuspiciousPrivilegeUse | Format-Table -AutoSize
 ```
+ATTACK SCENARIO: Mimikatz Usage
+─────────────────────────────────────────────────────────
+Tool:       Mimikatz (credential dumping)
+Requires:   SeDebugPrivilege (to read LSASS memory)
+
+DETECTION:
+Event ID 4673: Sensitive privilege use
+Privilege: SeDebugPrivilege
+Process:   C:\Users\hacker\mimikatz.exe
+Result:    Success (if policy allows) or Failure
+
+NOTE: Legitimate processes (antivirus, system tools) also use this
+      Requires baseline of normal activity
+```
+
+**Configuration Recommendation:**
+- **Enable Failure** (Success can be very noisy)
+- **Focus on:** SeDebugPrivilege, SeBackupPrivilege
+- **Volume Impact:** Very high if Success is enabled
 
 ---
 
-### 7. Audit System Events 🖥️
+### 7. Audit System Events
 
-**What it Tracks:**
-System-level changes: restarts, shutdowns, security log management.
-
-**Critical Event IDs:**
-| Event ID | Description | Priority |
-|----------|-------------|----------|
-| 512 | Windows startup | Info |
-| 513 | Windows shutdown | Info |
-| 1102 | Audit log cleared | **CRITICAL** |
-
-**Detailed Scenario: Detecting Log Tampering**
+**What it tracks:** System-level security events
 
 ```
-Attack Pattern: Evidence Destruction
-────────────────────────────────────
-Attacker clears Security log to remove traces of their activity.
-This is logged as Event ID 1102, but only if this policy is enabled!
+EVENTS MONITORED:
+─────────────────────────────────────────────────────────
+512  - Windows startup
+513  - Windows shutdown
+514  - Authentication package loaded
+515  - Logon process registered
+516  - Internal resources allocated for queuing
+517  - Audit log cleared (CRITICAL!)
+518  - Notification package loaded
+519  - Process using invalid local RPC
+520  - System time changed
 
-Detection Strategy:
-───────────────────
-1. Enable "Audit system events" - Success
-2. Monitor Event ID 1102 obsessively
-3. Immediate high-priority alert
-4. Correlation: Who cleared logs? From where? When?
-5. Automated response: Preserve logs from SIEM, snapshot VM
+SECURITY IMPLICATIONS:
+- Event 517: Attacker clearing logs to hide tracks
+- Event 512/513: Unexpected reboots (possible crash/patch)
+- Event 520: Time changes (affect log correlation)
 ```
 
-**Implementation:**
+**Real-World Use Case: Log Clearing Detection**
 
-```powershell
-# Enable
-auditpol /set /subcategory:"System" /success:enable /failure:enable
-
-# Critical monitoring for log clearing
-function Watch-LogClearing {
-    $event = Get-WinEvent -FilterHashtable @{
-        LogName = 'Security'
-        ID = 1102
-        StartTime = (Get-Date).AddMinutes(-5)
-    } -MaxEvents 1 -ErrorAction SilentlyContinue
-
-    if ($event) {
-        $xml = [xml]$event.ToXml()
-        $subject = ($xml.Event.EventData.Data | 
-                   Where-Object {$_.Name -eq 'SubjectUserName'}).
-                   '#text'
-        $sid = ($xml.Event.EventData.Data | 
-               Where-Object {$_.Name -eq 'SubjectUserSid'}).
-               '#text'
-
-        $alert = @"
-🚨 CRITICAL SECURITY ALERT 🚨
-Audit Log Cleared Detected!
-Time: $($event.TimeCreated)
-User: $subject
-SID: $sid
-Computer: $($event.MachineName)
-
-IMMEDIATE ACTION REQUIRED:
-1. Verify if this was authorized change management
-2. If unauthorized: Disable account immediately
-3. Preserve SIEM logs (if forwarding enabled)
-4. Initiate incident response procedure
-5. Check for other indicators of compromise
-"@
-
-        Write-Host $alert -ForegroundColor Red -BackgroundColor Black
-
-        # Send email/Teams/Slack alert
-        # Invoke-RestMethod to webhook
-        # Disable-ADAccount if unauthorized
-    }
-}
-
-# Run every 5 minutes via Task Scheduler
-Watch-LogClearing
 ```
+CRITICAL ALERT SCENARIO:
+─────────────────────────────────────────────────────────
+Event ID: 517 (Legacy) or 1102 (Modern)
+Action:   Security log cleared
+User:     SYSTEM or specific admin
+
+IMMEDIATE ACTIONS:
+1. Verify if this was authorized (change management?)
+2. If unauthorized: Assume breach
+3. Check for other logs (System, Application, Forwarded Events)
+4. Review network logs for same timeframe
+5. Check backup integrity
+
+ATTACK CONTEXT:
+- Common step in APT (Advanced Persistent Threat) cleanup
+- Often preceded by mass failed logon attempts
+- May indicate successful privilege escalation
+```
+
+**Configuration Recommendation:**
+- **Always enable Success and Failure**
+- **Critical for:** All systems
+- **Volume Impact:** Low
 
 ---
 
-### 8. Audit Process Tracking 🔄
+### 8. Audit Process Tracking
 
-**What it Tracks:**
-Process creation and termination.
+**What it tracks:** Process creation and termination
 
-**Use Cases:**
-- Malware execution detection
-- Unauthorized software installation
-- Command-line auditing (with proper configuration)
-
-**Note:** High volume policy. Consider using Advanced Auditing for granularity.
-
-**Implementation:**
-
-```powershell
-# Enable (Warning: Very high event volume)
-auditpol /set /subcategory:"Process Tracking" /success:enable /failure:enable
-
-# Process creation generates Event ID 4688
-# Requires additional policy: "Include command line in process creation events"
-# Computer Configuration -> Administrative Templates -> 
-# System -> Audit Process Creation -> Include command line
-
-# Analysis: Find suspicious processes
-function Get-SuspiciousProcesses {
-    param([int]$HoursBack = 1)
-
-    $suspiciousPatterns = @(
-        "mimikatz",
-        "pwdump",
-        "nc.exe", 
-        "ncat",
-        "powershell -enc",
-        "powershell -exec bypass",
-        "cmd.exe /c",
-        "rundll32",
-        "regsvr32",
-        "certutil -urlcache",
-        "bitsadmin"
-    )
-
-    Get-WinEvent -FilterHashtable @{
-        LogName = 'Security'
-        ID = 4688
-        StartTime = (Get-Date).AddHours(-$HoursBack)
-    } | ForEach-Object {
-        $xml = [xml]$_.ToXml()
-        $cmdLine = ($xml.Event.EventData.Data | 
-                   Where-Object {$_.Name -eq 'CommandLine'}).
-                   '#text'
-
-        foreach ($pattern in $suspiciousPatterns) {
-            if ($cmdLine -like "*$pattern*") {
-                [PSCustomObject]@{
-                    Time = $_.TimeCreated
-                    Process = ($xml.Event.EventData.Data | 
-                              Where-Object {$_.Name -eq 'NewProcessName'}).
-                              '#text'
-                    CommandLine = $cmdLine
-                    User = ($xml.Event.EventData.Data | 
-                           Where-Object {$_.Name -eq 'SubjectUserName'}).
-                           '#text'
-                    ParentProcess = ($xml.Event.EventData.Data | 
-                                    Where-Object {$_.Name -eq 'ParentProcessName'}).
-                                    '#text'
-                    MatchedPattern = $pattern
-                }
-                break
-            }
-        }
-    }
-}
-
-Get-SuspiciousProcesses | Format-Table -AutoSize -Wrap
 ```
+EVENTS MONITORED:
+─────────────────────────────────────────────────────────
+4688 - Process created (NEW PROCESS NAME)
+4689 - Process exited
+4696 - Primary token assigned to process
+
+DETAILS CAPTURED:
+- New Process Name (executable path)
+- Creator Process Name (parent process)
+- Process Command Line (arguments)
+- Token Elevation Type (admin rights?)
+```
+
+**Real-World Use Case: Detecting Malicious PowerShell**
+
+```
+DETECTION SCENARIO:
+─────────────────────────────────────────────────────────
+Event ID: 4688
+New Process: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+Command Line: powershell -enc UwB0AGEAcgB0AC0AUwBsAGUAZQBwACAALQBzACAAMQAwAA==
+Parent Process: C:\Windows\System32\svchost.exe (suspicious!)
+
+DECODED COMMAND: Start-Sleep -s 10
+
+RED FLAGS:
+1. Base64 encoded command (hiding intent)
+2. Unusual parent process (should be explorer.exe or cmd.exe)
+3. Network connections from PowerShell process
+
+RECOMMENDED: Enable command line logging via GPO
+Computer Config > Admin Templates > System > Audit Process Creation > Include command line
+```
+
+**Configuration Recommendation:**
+- **Enable Success** for high-security environments
+- **Volume Impact:** Very high (every program launch)
+- **Mitigation:** Use only on critical servers, not workstations
 
 ---
 
-### 9. Audit Object Access 📂
+### 9. Audit Object Access
 
-**What it Tracks:**
-Access to files, folders, registry keys, and printers with configured SACLs.
-
-**This is the most commonly used auditing category for data protection.**
-
----
-
-## File and Folder Auditing
-
-### The Three-Step Process
+**What it tracks:** Access to files, folders, registry keys, printers (when SACLs configured)
 
 ```
-Step 1: Enable Policy
-─────────────────────
-Enable "Audit object access" - Success, Failure (or both)
+CONFIGURATION STEPS:
+─────────────────────────────────────────────────────────
+1. Enable "Audit Object Access" policy (Success/Failure)
+2. Configure SACL on specific files/folders
+3. Monitor Security Log for events
 
-Step 2: Configure SACL
-──────────────────────
-Right-click folder -> Properties -> Security -> Advanced -> Auditing
-Add principals and permissions to monitor
-
-Step 3: Monitor Events
-──────────────────────
-View in Event Viewer -> Security Log
-Event ID 4663: An attempt was made to access an object
+EVENT IDs:
+4663 - Attempt to access object
+4656 - Handle to object requested
+4658 - Handle to object closed
+4664 - Hard link created
+4670 - Permissions changed on object
 ```
 
-### Detailed Implementation: Protecting Sensitive Data
+**Real-World Use Case: Monitoring Sensitive File Access**
 
-**Scenario:** Contoso needs to monitor access to \FileServer\Finance\QuarterlyReports
+```
+SCENARIO: Customer Database Protection
+─────────────────────────────────────────────────────────
+Resource:   D:\Data\CustomerDB.mdf
+SACL:       Everyone - Write, Delete - Failure
+            Domain Admins - Full Control - Success
 
-**Step-by-Step:**
+NORMAL ACTIVITY:
+- SQL Server service account reads file (expected)
+- Backup account reads file (expected)
 
-```powershell
-# Step 1: Enable policy (if not already enabled via GPO)
-auditpol /set /subcategory:"File System" /success:enable /failure:enable
+ALERT TRIGGERED:
+Event ID 4663 - Failed access attempt
+User: marketing_intern
+Access: WriteData (attempted modification)
+Process: C:\Windows\System32\notepad.exe
 
-# Step 2: Configure SACL via PowerShell (more scalable than GUI)
-$path = "\ileserverinance\QuarterlyReports"
-$acl = Get-Acl $path -Audit
-
-# Remove existing audit rules to avoid conflicts
-$acl.GetAuditRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | 
-    ForEach-Object { $acl.RemoveAuditRule($_) | Out-Null }
-
-# Add comprehensive audit rule
-$auditRule = New-Object System.Security.AccessControl.FileSystemAuditRule(
-    "Authenticated Users",                    # Who to audit
-    "Read, Write, Modify, Delete",           # What actions
-    "ContainerInherit,ObjectInherit",        # Apply to subfolders/files
-    "None",                                  # No propagation flags
-    "Success, Failure"                       # Log both outcomes
-)
-
-$acl.AddAuditRule($auditRule)
-Set-Acl $path $acl
-
-# Verify
-(Get-Acl $path -Audit).GetAuditRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | 
-    Format-List
-
-# Step 3: Monitor with PowerShell
-function Get-FileAccessEvents {
-    param(
-        [string]$TargetPath = "QuarterlyReports",
-        [int]$MinutesBack = 30
-    )
-
-    Get-WinEvent -FilterHashtable @{
-        LogName = 'Security'
-        ID = 4663
-        StartTime = (Get-Date).AddMinutes(-$MinutesBack)
-    } | ForEach-Object {
-        $xml = [xml]$_.ToXml()
-        $objectName = ($xml.Event.EventData.Data | 
-                      Where-Object {$_.Name -eq 'ObjectName'}).
-                      '#text'
-
-        if ($objectName -like "*$TargetPath*") {
-            $accessMask = ($xml.Event.EventData.Data | 
-                          Where-Object {$_.Name -eq 'AccessMask'}).
-                          '#text'
-
-            # Decode access mask
-            $accessType = switch ($accessMask) {
-                "0x10000" { "Delete" }
-                "0x6" { "Read/Write" }
-                "0x40000" { "Write Attributes" }
-                "0x80000" { "Write Extended Attributes" }
-                default { "Other ($accessMask)" }
-            }
-
-            [PSCustomObject]@{
-                Time = $_.TimeCreated
-                User = ($xml.Event.EventData.Data | 
-                       Where-Object {$_.Name -eq 'SubjectUserName'}).
-                       '#text'
-                Object = Split-Path $objectName -Leaf
-                AccessType = $accessType
-                Result = if ($_.KeywordsDisplayNames -contains "Audit Success") { 
-                    "Success" 
-                } else { 
-                    "Failure" 
-                }
-                FullPath = $objectName
-            }
-        }
-    } | Sort-Object Time -Descending
-}
-
-# Real-time monitoring
-while ($true) {
-    Clear-Host
-    Write-Host "Monitoring Finance Share Access... ($(Get-Date))" -ForegroundColor Green
-    Get-FileAccessEvents -MinutesBack 5 | Format-Table -AutoSize
-    Start-Sleep -Seconds 10
-}
+INVESTIGATION:
+- Why is marketing intern accessing production database?
+- Possible data exfiltration attempt?
+- Check if file was copied elsewhere
 ```
 
-### Access Mask Reference Table
-
-| Access Mask | Permission | Description |
-|-------------|------------|-------------|
-| 0x1 | Read Data | Read file contents |
-| 0x2 | Write Data | Write to file |
-| 0x4 | Append Data | Add to end of file |
-| 0x8 | Read EA | Read extended attributes |
-| 0x10 | Write EA | Write extended attributes |
-| 0x20 | Execute | Run file |
-| 0x40 | Delete Child | Delete subdirectory |
-| 0x10000 | Delete | Delete file/folder |
-| 0x40000 | Write Attributes | Modify attributes |
-| 0x100000 | Synchronize | Synchronize access |
+**Configuration Recommendation:**
+- **Enable Failure** on sensitive data locations
+- **Enable Success** only for compliance requirements
+- **Volume Impact:** Extremely high if broadly applied
 
 ---
 
 ## Implementation Scenarios
 
-### Scenario A: Small Business (10-50 Users)
+### Scenario 1: Financial Services Compliance (SOX)
 
 **Requirements:**
-- Monitor failed logons
-- Track file access to sensitive shares
-- Basic compliance for cyber insurance
-- Minimal administrative overhead
+- Track all access to financial data
+- Monitor changes to financial applications
+- Detect unauthorized privilege escalation
+- Retain logs for 7 years
 
-**Recommended Configuration:**
+**Solution Architecture:**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  TIER 1: DOMAIN CONTROLLERS                                 │
+│  • Audit Account Logon Events: Success, Failure             │
+│  • Audit Account Management: Success, Failure               │
+│  • Audit Directory Service Access: Success, Failure         │
+│  • Audit Policy Change: Success, Failure                    │
+│  • Audit System Events: Success, Failure                    │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  TIER 2: FINANCIAL APPLICATION SERVERS                      │
+│  • Audit Logon Events: Success, Failure                     │
+│  • Audit Object Access: Failure (with SACLs on data)        │
+│  • Audit Process Tracking: Success                          │
+│  • Audit Privilege Use: Failure                             │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  TIER 3: WORKSTATIONS                                       │
+│  • Audit Logon Events: Failure                              │
+│  • Audit Object Access: Failure (sensitive shares only)     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Implementation Steps:**
 
 ```powershell
-# Enable via Local Security Policy or GPO
-# Focus on high-value, low-volume events
+# Step 1: Create GPO for Financial Servers
+$GPO = New-GPO -Name "Financial-Server-Auditing" 
+New-GPLink -Name "Financial-Server-Auditing" -Target "OU=Finance-Servers,DC=corp,DC=com"
 
-$basicAuditConfig = @{
-    "Account Logon" = "Failure"        # Detect brute force
-    "Logon" = "Success, Failure"       # Track access
-    "Account Management" = "Success"   # Track changes
-    "Object Access" = "Failure"        # Failed file access only
-    "Policy Change" = "Success"        # Detect tampering
-    "System" = "Success"               # Log clearing detection
-}
+# Step 2: Configure via Group Policy Management Editor
+# Computer Config > Policies > Windows Settings > Security Settings > Local Policies > Audit Policy
 
-foreach ($category in $basicAuditConfig.Keys) {
-    $setting = $basicAuditConfig[$category]
-    Write-Host "Configuring $category : $setting"
-    # auditpol /set /subcategory:"$category" /$($setting.ToLower().Replace(', ', ' /')):enable
-}
+# Step 3: Configure SACLs on critical data
+$path = "\\server\finance\"
+$acl = Get-Acl $path
 
-# Configure SACL on sensitive folder only
-$path = "C:\CompanyData\Sensitive"
-if (Test-Path $path) {
-    $acl = Get-Acl $path -Audit
-    $rule = New-Object System.Security.AccessControl.FileSystemAuditRule(
-        "Everyone", "Modify", "Success, Failure"
-    )
-    $acl.AddAuditRule($rule)
-    Set-Acl $path $acl
-}
+# Add audit rule for Everyone, Failed Write/Delete
+$auditRule = New-Object System.Security.AccessControl.FileSystemAuditRule(
+    "Everyone",
+    [System.Security.AccessControl.FileSystemRights]::Write -bor [System.Security.AccessControl.FileSystemRights]::Delete,
+    [System.Security.AccessControl.AuditFlags]::Failure
+)
+$acl.AddAuditRule($auditRule)
+Set-Acl $path $acl
+
+# Step 4: Configure event log retention (7 years)
+wevtutil sl Security /rt:true /ab:true /ms:2147483648  # 2GB max size, auto backup
+
+# Step 5: Forward events to SIEM
+wecutil cs subscription.xml  # Configure Windows Event Collector
 ```
 
 ---
 
-### Scenario B: Enterprise Domain (1000+ Users)
+### Scenario 2: Detecting Ransomware Activity
 
-**Requirements:**
-- SOX compliance for financial data
-- Detect privilege escalation
-- Monitor administrative actions
-- Centralized log aggregation
-
-**Architecture:**
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    SIEM / Azure Sentinel                         │
-│                    (Central Analysis)                            │
-└─────────────────────────────────────────────────────────────────┘
-                              ▲
-                              │ WEF / AMA
-        ┌─────────────────────┼─────────────────────┐
-        │                     │                     │
-   ┌────┴────┐          ┌────┴────┐          ┌────┴────┐
-   │ Domain  │          │ File    │          │ SQL     │
-   │Controllers│         │ Servers │          │ Servers │
-   │         │          │         │          │         │
-   │ • Account│          │ • File  │          │ • DB    │
-   │   Logon │          │   Access│          │   Access│
-   │ • DS    │          │ • Share │          │ • Admin │
-   │   Access│          │   Access│          │   Actions
-   └─────────┘          └─────────┘          └─────────┘
-```
-
-**Group Policy Configuration:**
-
-```powershell
-# Create GPO for different server tiers
-Import-Module GroupPolicy
-
-# Domain Controllers - Maximum auditing
-New-GPO -Name "Audit-DC-High" | New-GPLink -Target "OU=Domain Controllers,DC=contoso,DC=com"
-# Configure: Account Logon, DS Access, Account Management, Policy Change - All Success and Failure
-
-# File Servers - Focus on data access
-New-GPO -Name "Audit-FileServers" | New-GPLink -Target "OU=FileServers,DC=contoso,DC=com"
-# Configure: Object Access (File System), Account Management
-
-# General Servers - Balanced
-New-GPO -Name "Audit-General" | New-GPLink -Target "OU=Servers,DC=contoso,DC=com"
-# Configure: Logon, Account Management, System
-
-# Configure via Group Policy Preferences or Security Templates
-```
-
----
-
-### Scenario C: Ransomware Detection
-
-**Requirements:**
-- Detect mass file modifications
-- Identify encryption behavior
-- Alert on suspicious process execution
+**Attack Pattern:**
+1. Initial compromise (phishing, RDP brute force)
+2. Lateral movement
+3. Privilege escalation
+4. Mass file encryption
 
 **Detection Strategy:**
 
+```
+PHASE 1: INITIAL ACCESS DETECTION
+─────────────────────────────────────────────────────────
+Policy: Audit Logon Events (Failure)
+Alert:  10+ failed logons from single IP in 5 minutes
+Event:  4625 (Failed logon)
+
+Policy: Audit Account Logon Events (Failure)  
+Alert:  Multiple failed Kerberos pre-authentication
+Event:  4771 (Kerberos pre-auth failed)
+
+PHASE 2: LATERAL MOVEMENT DETECTION
+─────────────────────────────────────────────────────────
+Policy: Audit Logon Events (Success)
+Alert:  Same account logging to multiple systems rapidly
+Event:  4624 (Successful logon)
+
+Policy: Audit Process Tracking (Success)
+Alert:  PsExec, WMIExec, or PowerShell remoting
+Event:  4688 (Process creation with suspicious parent)
+
+PHASE 3: PRIVILEGE ESCALATION
+─────────────────────────────────────────────────────────
+Policy: Audit Privilege Use (Failure)
+Alert:  SeDebugPrivilege usage by non-admin tools
+Event:  4673 (Sensitive privilege use)
+
+Policy: Audit Account Management (Success)
+Alert:  Account added to Domain Admins
+Event:  4728 (Member added to global group)
+
+PHASE 4: ENCRYPTION DETECTION
+─────────────────────────────────────────────────────────
+Policy: Audit Object Access (Failure)
+Alert:  Mass file access denials (files being encrypted)
+Event:  4663 (Access to object - WriteData)
+
+Policy: Audit Process Tracking (Success)
+Alert:  Unknown process accessing many files rapidly
+Event:  4688 (Process creation - suspicious .exe)
+```
+
+**Automated Response Script:**
+
 ```powershell
-# Layer 1: Monitor for mass file access (Event ID 4663 flood)
-function Test-RansomwareActivity {
-    param(
-        [int]$Threshold = 100,  # Events per minute
-        [int]$MinutesBack = 5
-    )
+# Ransomware Detection & Response
+# Run as scheduled task every 5 minutes
 
-    $events = Get-WinEvent -FilterHashtable @{
-        LogName = 'Security'
-        ID = 4663
-        StartTime = (Get-Date).AddMinutes(-$MinutesBack)
-    } -ErrorAction SilentlyContinue
+$AlertThreshold = 100  # File modifications in 5 minutes
+$TimeWindow = (Get-Date).AddMinutes(-5)
 
-    $grouped = $events | Group-Object { 
-        $xml = [xml]$_.ToXml()
-        ($xml.Event.EventData.Data | 
-         Where-Object {$_.Name -eq 'SubjectUserName'}).
-         '#text'
-    }
+# Check for mass file modifications
+$events = Get-WinEvent -FilterHashtable @{
+    LogName = 'Security'
+    ID = 4663
+    StartTime = $TimeWindow
+} | Where-Object { $_.Message -like "*WriteData*" -or $_.Message -like "*Delete*" }
 
-    $suspicious = $grouped | Where-Object { 
-        $_.Count -gt ($Threshold * $MinutesBack) 
-    }
+$grouped = $events | Group-Object -Property { $_.Properties[1].Value }  # Group by process name
 
-    if ($suspicious) {
-        Write-Warning "Potential Ransomware Activity Detected!"
-        $suspicious | ForEach-Object {
-            [PSCustomObject]@{
-                User = $_.Name
-                FileOperations = $_.Count
-                TimeWindow = "$MinutesBack minutes"
-                SampleEvents = $_.Group | Select-Object -First 3 | 
-                    ForEach-Object { $_.TimeCreated }
-            }
-        }
+foreach ($process in $grouped) {
+    if ($process.Count -gt $AlertThreshold) {
+        # Potential ransomware activity detected
+        $processName = $process.Name
+        $processId = ($process.Group | Select-Object -First 1).Properties[2].Value
 
-        # Automated response: Disable user, isolate machine
-        # Disable-ADAccount -Identity $suspicious[0].Name
+        # Immediate actions
+        Write-EventLog -LogName Application -Source "RansomwareDetection" -EventId 9999 -EntryType Warning -Message "Potential ransomware: $processName modified $($process.Count) files"
+
+        # Isolate system (disable network adapter)
+        # Get-NetAdapter | Disable-NetAdapter -Confirm:$false
+
+        # Kill process
+        # Stop-Process -Id $processId -Force
+
+        # Send alert
+        Send-MailMessage -To "security@company.com" -From "alerts@company.com" -Subject "CRITICAL: Potential Ransomware Activity" -Body "Process $processName on $env:COMPUTERNAME"
     }
 }
-
-# Layer 2: Monitor for suspicious process patterns
-# (Requires Process Tracking enabled)
-$ransomwareIndicators = @(
-    "vssadmin.exe delete shadows",
-    "wbadmin.exe delete catalog",
-    "bcdedit.exe /set {default} recoveryenabled no",
-    "wmic.exe shadowcopy delete"
-)
-
-# Layer 3: File extension monitoring
-# Monitor for bulk file extension changes (requires script-based monitoring)
 ```
 
 ---
 
-## Security Log Analysis
+### Scenario 3: Insider Threat Detection
 
-### Event Viewer Navigation
+**Threat Model:**
+- Departing employees stealing data
+- Privileged users abusing access
+- Contractors accessing unauthorized resources
+
+**Monitoring Strategy:**
 
 ```
-Event Viewer (eventvwr.msc)
-├── Windows Logs
-│   ├── Security  <-- Audit events stored here
-│   │   ├── Filter Current Log... (by Event ID)
-│   │   ├── Find... (keyword search)
-│   │   └── Save All Events As... (evtx or XML)
-│   ├── System
-│   └── Application
-└── Subscriptions (for event forwarding)
+DATA EXFILTRATION INDICATORS:
+─────────────────────────────────────────────────────────
+1. Unusual access patterns
+   - Accessing files outside normal hours
+   - Accessing files never touched before
+   - Bulk copying to USB (Event ID 6416 - new USB device)
+
+2. Permission changes
+   - Creating backdoor accounts (Event 4720)
+   - Adding self to privileged groups (Event 4732)
+   - Modifying SACLs to hide activity (Event 4715)
+
+3. Data staging
+   - Zipping large amounts of data
+   - Accessing database export tools
+   - Connecting to personal cloud storage
+
+AUDIT CONFIGURATION:
+─────────────────────────────────────────────────────────
+Workstations:
+- Audit Logon Events: Success, Failure
+- Audit Object Access: Success, Failure (on sensitive shares)
+- Audit Process Tracking: Success (high disk usage, consider filtering)
+- Audit Removable Storage: Success (requires additional policy)
+
+Servers:
+- Audit Logon Events: Success, Failure
+- Audit Object Access: Failure (prevent data access)
+- Audit Account Management: Success, Failure
+- Audit Privilege Use: Failure
 ```
 
-### PowerShell Analysis Techniques
+**User Behavior Analytics Query:**
 
 ```powershell
-# 1. Export security log for offline analysis
-$logPath = "C:\SecurityLogs\Security_$(Get-Date -Format 'yyyyMMdd').evtx"
-wevtutil epl Security $logPath
+# Detect anomalous file access
+# Compare current week to previous 4-week baseline
 
-# 2. Query specific time range
-$start = (Get-Date).AddDays(-1)
-$end = Get-Date
-Get-WinEvent -FilterHashtable @{
+$currentWeek = Get-WinEvent -FilterHashtable @{
     LogName = 'Security'
-    StartTime = $start
-    EndTime = $end
-    ID = 4624, 4625, 4720, 4728
-} | Export-Csv -Path "C:\Reports\security_events.csv" -NoTypeInformation
-
-# 3. Real-time monitoring
-Get-WinEvent -LogName Security -MaxEvents 1 -Wait | 
-    Where-Object { $_.Id -eq 4625 } |
-    ForEach-Object { 
-        Send-MailMessage -To "security@contoso.com" -Subject "Failed Logon Detected" 
-    }
-
-# 4. Statistical analysis
-Get-WinEvent -FilterHashtable @{
-    LogName = 'Security'
+    ID = 4663
     StartTime = (Get-Date).AddDays(-7)
-} | Group-Object Id | 
-    Select-Object Name, Count | 
-    Sort-Object Count -Descending |
-    Format-Table -AutoSize
+} | Group-Object -Property { $_.Properties[0].Value }  # Group by username
+
+$baseline = Get-WinEvent -FilterHashtable @{
+    LogName = 'Security'
+    ID = 4663
+    StartTime = (Get-Date).AddDays(-28)
+    EndTime = (Get-Date).AddDays(-7)
+} | Group-Object -Property { $_.Properties[0].Value }
+
+foreach ($user in $currentWeek) {
+    $baselineAvg = ($baseline | Where-Object { $_.Name -eq $user.Name }).Count / 4
+    $currentCount = $user.Count
+
+    if ($currentCount -gt ($baselineAvg * 3)) {  # 3x normal activity
+        Write-Output "ALERT: User $($user.Name) has $currentCount file accesses vs baseline $baselineAvg"
+    }
+}
+```
+
+---
+
+## Configuration Guides
+
+### Method 1: Local Security Policy (Single Server)
+
+```
+Step-by-Step:
+─────────────────────────────────────────────────────────
+1. Run: secpol.msc
+2. Navigate to: Security Settings > Local Policies > Audit Policy
+3. Double-click policy to configure
+4. Check "Define these policy settings"
+5. Select Success and/or Failure
+6. Click OK
+7. Run: gpupdate /force (or wait for automatic refresh)
+
+VERIFICATION:
+- Open Event Viewer (eventvwr.msc)
+- Navigate to Windows Logs > Security
+- Verify events are being generated
+```
+
+### Method 2: Group Policy (Domain Environment)
+
+```
+Best Practice: Create separate GPOs for different server tiers
+─────────────────────────────────────────────────────────
+
+1. Open Group Policy Management (gpmc.msc)
+2. Create New GPO: "Domain-Controller-Auditing"
+3. Link to Domain Controllers OU
+4. Edit GPO:
+
+   Computer Configuration > Policies > Windows Settings > 
+   Security Settings > Local Policies > Audit Policy
+
+5. Configure settings:
+
+   Policy Setting                    Value
+   ─────────────────────────────────────────────
+   Audit account logon events        Success, Failure
+   Audit account management          Success, Failure
+   Audit directory service access    Success, Failure
+   Audit logon events                Success, Failure
+   Audit object access               Failure
+   Audit policy change               Success, Failure
+   Audit privilege use               Failure
+   Audit process tracking            No auditing
+   Audit system events               Success, Failure
+
+6. Create additional GPOs:
+   - "File-Server-Auditing" (focused on object access)
+   - "Application-Server-Auditing" (focused on process tracking)
+   - "Workstation-Auditing" (minimal, failure only)
+
+7. Use Security Filtering or WMI Filtering to target specific systems
+```
+
+### Method 3: Advanced Audit Policy (Recommended for Enterprise)
+
+```
+Why Use Advanced Auditing?
+─────────────────────────────────────────────────────────
+- Granular control (60+ subcategories)
+- Can exclude specific operations
+- Better performance (audit only what you need)
+- Overrides basic audit policy when configured
+
+Configuration:
+Computer Configuration > Policies > Windows Settings > 
+Security Settings > Advanced Audit Policy Configuration > 
+System Audit Policies
+
+EXAMPLE: Detailed Logon Auditing
+─────────────────────────────────────────────────────────
+Logon/Logoff:
+  - Audit Logon: Success, Failure
+  - Audit Logoff: Success
+  - Audit Account Lockout: Failure
+  - Audit IPsec Main Mode: No auditing
+  - Audit IPsec Quick Mode: No auditing
+  - Audit Other Logon/Logoff Events: Success, Failure
+  - Audit Network Policy Server: Success, Failure
+  - Audit User / Device Claims: No auditing
+  - Audit Group Membership: Success
+
+This level of granularity is impossible with basic auditing!
 ```
 
 ---
 
 ## Best Practices
 
-### 1. Start Conservative
-
-```powershell
-# Week 1: Enable failure-only auditing
-auditpol /set /subcategory:"Logon" /failure:enable /success:disable
-
-# Monitor log growth
-$initialSize = (Get-WinEvent -ListLog Security).FileSize
-Start-Sleep -Seconds 3600  # Wait 1 hour
-$finalSize = (Get-WinEvent -ListLog Security).FileSize
-$growthRate = ($finalSize - $initialSize) * 24 / 1MB  # MB per day
-Write-Host "Estimated daily log growth: $([math]::Round($growthRate, 2)) MB"
-
-# If manageable (< 500 MB/day), enable success auditing for critical categories
-```
-
-### 2. Use Group Policy for Consistency
+### The Goldilocks Principle
 
 ```
-Best Practice Hierarchy:
-────────────────────────
-Domain Controllers OU    → Maximum auditing (all categories)
-File Servers OU          → Object Access focus
-Application Servers OU   → Process tracking, Logon
-Workstations OU          → Logon, Account Management
+NOT ENOUGH AUDITING                    TOO MUCH AUDITING
+───────────────────                    ─────────────────
+Miss security incidents                Log flooding
+Fail compliance audits                 SIEM license overages
+Cannot investigate breaches            Storage costs explode
+No forensic capability                 Miss real alerts in noise
+
+JUST RIGHT:
+─────────────────────────────────────────────────────────
+• Audit failures broadly (cheap, high signal)
+• Audit successes selectively (expensive, know why)
+• Focus on critical assets
+• Tune based on operational experience
 ```
 
-### 3. Centralize Log Collection
+### Recommended Default Configuration
 
-```powershell
-# Configure Windows Event Forwarding (WEF)
-# OR use Azure Monitor Agent
+| System Type | Critical Policies | Volume Management |
+|-------------|-------------------|-------------------|
+| **Domain Controllers** | Account Logon, Account Mgmt, Policy Change, System Events | Monitor closely, centralize logs |
+| **Member Servers** | Logon Events, Account Mgmt, Object Access (targeted) | Filter noise, alert on anomalies |
+| **Workstations** | Logon Events (Failure), Object Access (sensitive only) | Minimal retention, forward alerts |
+| **File Servers** | Object Access (SACLs), Logon Events | Archive old logs, monitor trends |
 
-# Azure Monitor Agent installation
-$workspaceId = "your-workspace-id"
-$workspaceKey = "your-workspace-key"
+### Log Management Strategy
 
-# Download and install AMA
-# Configure data collection rules for Security log
-# Set retention policy (7 years for compliance)
+```
+ARCHITECTURE: Centralized Log Collection
+─────────────────────────────────────────────────────────
+
+Windows Servers → Windows Event Collector (WEC) → SIEM → Long-term Storage
+     │                    │                        │
+     └─ Local 24h retention    └─ 90 day hot storage      └─ 7 year cold storage
+     └─ Forward critical         └─ Real-time alerting      └─ Compliance archive
+        events immediately
+
+CONFIGURATION:
+1. Configure subscription on WEC server:
+   wecutil cs subscription.xml
+
+2. Configure source computers to forward:
+   winrm quickconfig
+   wecutil qc
+
+3. Set log sizes appropriately:
+   - Security log: 1GB minimum (circular if needed)
+   - Forwarded Events: 10GB+ (centralized storage)
+   - Archive to .evtx files monthly
+
+4. Monitor log health:
+   - Alert if logs stop flowing
+   - Alert if log volume spikes
+   - Alert if Event ID 1104 (log full) occurs
 ```
 
-### 4. Regular Review Schedule
+### Compliance Mapping
 
-| Frequency | Task | Responsible |
-|-----------|------|-------------|
-| Daily | Review critical alerts (1102, 4719, 4728) | Security Team |
-| Weekly | Analyze failed logon trends | Security Analyst |
-| Monthly | Audit policy compliance check | Compliance Officer |
-| Quarterly | Full audit configuration review | Security Architect |
-
-### 5. Log Protection
-
-```powershell
-# Prevent log clearing (additional layer)
-wevtutil sl Security /ca:O:BAG:SYD:(A;;0xf0005;;;SY)(A;;0x5;;;BA)(A;;0x1;;;BO)
-
-# Enable forwarding before events can be cleared
-# Use SIEM with WORM storage (Write Once Read Many)
-```
+| Regulation | Requirement | Audit Policy |
+|------------|-------------|--------------|
+| **SOX** | Track financial data access | Object Access + SACLs |
+| **HIPAA** | Monitor PHI access | Object Access + Logon Events |
+| **PCI-DSS** | Track cardholder data environment | Account Logon + Object Access |
+| **GDPR** | Track personal data processing | Directory Service Access + Object Access |
+| **NIST 800-53** | Comprehensive audit trail | All categories with SIEM correlation |
 
 ---
 
 ## Troubleshooting
 
-### Issue: No Events Appearing in Security Log
+### Common Issues
 
-**Diagnostic Steps:**
-```powershell
-# 1. Check if auditing is enabled
-auditpol /get /category:*
+**Issue 1: Events Not Being Logged**
 
-# 2. Verify log not full
-Get-WinEvent -ListLog Security | Select-Object LogMode, MaximumSizeInBytes, FileSize
+```
+DIAGNOSIS:
+1. Check policy application: gpresult /r /scope:computer
+2. Verify policy not overwritten: rsop.msc
+3. Check for conflicting GPOs
+4. Verify service status: Get-Service EventLog
+5. Check log not full: Get-WinEvent -ListLog Security
 
-# 3. Check GPO application
-gpresult /r | Select-String "Audit"
-
-# 4. Verify SACL configuration (for Object Access)
-Get-Acl C:\Path\To\Folder -Audit | Format-List
-
-# 5. Check for filtering policies
-auditpol /get /category:* | Select-String "No Auditing"
+SOLUTIONS:
+- Force GP update: gpupdate /force
+- Check Advanced Audit Policy isn't overriding basic
+- Verify SACLs are configured (for Object Access)
+- Ensure system has sufficient disk space
 ```
 
-### Issue: Log Volume Too High
+**Issue 2: Log Flooding**
 
-**Solutions:**
-```powershell
-# 1. Switch to failure-only for high-volume categories
-auditpol /set /subcategory:"Object Access" /failure:enable /success:disable
+```
+SYMPTOMS:
+- Security log fills up in hours
+- System performance degraded
+- SIEM overwhelmed
 
-# 2. Use Advanced Auditing for granularity
-# Instead of auditing all files, audit specific folders
+DIAGNOSIS:
+Get-WinEvent -LogName Security -MaxEvents 100 | 
+    Group-Object Id | Sort-Object Count -Descending
 
-# 3. Increase log size
-wevtutil sl Security /ms:1073741824  # 1 GB
+COMMON CAUSES:
+1. Process Tracking enabled on busy server
+   FIX: Disable or filter specific processes
 
-# 4. Enable auto-backup when full
-wevtutil sl Security /rt:true /ab:true
+2. Object Access auditing too broad
+   FIX: Narrow SACLs to specific folders
+
+3. Privilege Use Success auditing
+   FIX: Switch to Failure only
+
+4. Loop in application causing repeated events
+   FIX: Identify and fix application
+
+MITIGATION:
+wevtutil sl Security /ms:1073741824  # Increase to 1GB
+wevtutil sl Security /rt:true         # Enable retention (don't overwrite)
 ```
 
-### Issue: GPO Settings Not Applying
+**Issue 3: Log Tampering**
 
-```powershell
-# Force refresh
-gpupdate /force
+```
+DETECTION:
+Event ID 1102 - Audit log cleared
 
-# Check resultant policy
-Get-ResultantAuditPolicy  # Requires RSAT
+PREVENTION:
+1. Forward events in real-time to SIEM/WEC
+2. Use write-once media for archives
+3. Restrict "Manage auditing and security log" privilege
+4. Monitor for privilege escalation
 
-# Review event logs for errors
-Get-WinEvent -LogName System | Where-Object { 
-    $_.Message -like "*Group Policy*" -and $_.LevelDisplayName -eq "Error" 
-} | Select-Object -First 10
+RESPONSE:
+If logs are cleared:
+1. Assume system is compromised
+2. Isolate system from network
+3. Capture memory dump before shutdown
+4. Analyze from forensic image
+5. Check other systems for similar activity
 ```
 
 ---
@@ -1288,66 +958,64 @@ Get-WinEvent -LogName System | Where-Object {
 
 | ID | Description | Category | Priority |
 |----|-------------|----------|----------|
-| 4624 | Successful logon | Logon/Account Logon | Medium |
-| 4625 | Failed logon | Account Logon | **Critical** |
-| 4648 | Explicit credential logon | Account Logon | High |
-| 4720 | User account created | Account Management | **Critical** |
-| 4728 | Member added to global group | Account Management | **Critical** |
-| 4732 | Member added to local group | Account Management | **Critical** |
+| 4624 | Successful logon | Logon Events | Medium |
+| 4625 | Failed logon | Logon Events | High |
+| 4720 | User account created | Account Management | Critical |
+| 4728 | Member added to security group | Account Management | Critical |
+| 4732 | Member added to local group | Account Management | High |
 | 4663 | Object access attempt | Object Access | Medium |
-| 4662 | Operation on AD object | DS Access | High |
-| 4719 | Audit policy changed | Policy Change | **Critical** |
-| 1102 | Audit log cleared | System | **CRITICAL** |
+| 4673 | Sensitive privilege use | Privilege Use | High |
+| 4719 | System audit policy changed | Policy Change | Critical |
+| 1102 | Audit log cleared | System Events | Critical |
+| 4688 | Process created | Process Tracking | Medium |
 
-### AuditPol Quick Commands
+### PowerShell Commands
 
 ```powershell
-# View all settings
+# View current audit policy
 auditpol /get /category:*
 
-# Backup configuration
-auditpol /backup /file:"C:\audit_backup_$(Get-Date -Format 'yyyyMMdd').txt"
+# Set specific category
+auditpol /set /subcategory:"Logon" /success:enable /failure:enable
 
-# Restore configuration
-auditpol /restore /file:"C:\audit_backup.txt"
+# Export audit policy
+auditpol /backup /file:"C:\auditpolicy.csv"
 
-# Clear all settings (use with caution!)
-auditpol /clear /y
+# Import audit policy  
+auditpol /restore /file:"C:\auditpolicy.csv"
+
+# Search for specific event
+Get-WinEvent -FilterHashtable @{LogName='Security'; ID=4625}
+
+# Export security log
+Get-WinEvent -LogName Security | Export-Csv security.csv
+
+# Clear security log (requires privileges)
+Clear-EventLog -LogName Security
 ```
-
-### Configuration Checklist
-
-- [ ] Document current audit policy
-- [ ] Identify compliance requirements
-- [ ] Choose Basic or Advanced auditing
-- [ ] Configure via GPO (domains) or Local Policy (workgroups)
-- [ ] Set appropriate log sizes (minimum 1GB recommended)
-- [ ] Configure SACLs on sensitive data
-- [ ] Set up event forwarding to SIEM
-- [ ] Create alerting rules for critical events
-- [ ] Establish review procedures
-- [ ] Test incident response with simulated events
-
 
 ---
 
-## Conclusion
+## Summary
 
-Windows Server Basic Auditing provides essential security visibility for organizations of all sizes. By understanding the nine categories and implementing them strategically, you can:
+Effective Windows Server auditing requires:
 
-- Detect security threats in real-time
-- Meet compliance requirements efficiently
-- Maintain forensic evidence for investigations
-- Optimize system performance through targeted auditing
+1. **Strategic Planning**: Know what you're looking for before you start logging
+2. **Gradual Implementation**: Start with failures, add successes selectively  
+3. **Active Monitoring**: Logs are useless without review and alerting
+4. **Regular Tuning**: Adjust policies based on operational experience
+5. **Integration**: Centralize logs in SIEM for correlation and retention
 
-Remember: **More auditing is not always better.** Focus on high-value events that align with your security objectives and operational capabilities.
-
-For enterprise environments, consider graduating to Advanced Auditing for granular control and reduced log volume.
+Remember: **More auditing ≠ Better security**. Focused, well-managed auditing that you can actually analyze provides far more value than verbose logging that gets ignored.
 
 ---
 
 ## Additional Resources
 
-- [Microsoft Security Auditing Overview](https://docs.microsoft.com/windows/security/threat-protection/auditing/)
-- [Advanced Security Auditing](https://docs.microsoft.com/windows/security/threat-protection/auditing/advanced-security-auditing)
-- [Windows Event Log Analysis](https://docs.microsoft.com/windows/win32/eventlog/event-logging)
+- [Microsoft Security Auditing Overview](https://docs.microsoft.com/en-us/windows/security/threat-protection/auditing/security-auditing-overview)
+- [Advanced Security Auditing FAQ](https://docs.microsoft.com/en-us/windows/security/threat-protection/auditing/advanced-security-auditing-faq)
+- [Windows Security Log Encyclopedia](https://www.ultimatewindowssecurity.com/securitylog/encyclopedia/)
+- [Microsoft Audit Policy Recommendations](https://docs.microsoft.com/en-us/windows-server/identity/ad-ds/plan/security-best-practices/audit-policy-recommendations)
+
+---
+
